@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Dashboard</h1>
+    <p>Số dư: {{ so_du }} USDT</p>
+    <canvas id="priceChart"></canvas>
+    <script>
+        const ctx = document.getElementById('priceChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [{% for data in lich_su_gia %}{{ data.timestamp }},{% endfor %}],
+                datasets: [{
+                    label: 'Giá đóng cửa',
+                    data: [{% for data in lich_su_gia %}{{ data.close }},{% endfor %}],
+                    borderColor: 'blue',
+                    fill: false
+                }]
+            }
+        });
+    </script>
+</body>
+</html>
