@@ -35,6 +35,7 @@ class QuanLyWebSocket:
             spread = float(depth["asks"][0][0]) - float(depth["bids"][0][0])
             if spread > 0.01:
                 nhat_ky.warning(f"Spread lon cho {msg['symbol']}: {spread}%")
+                # Thêm logic để trigger giao dịch nếu cần
 
     def dong_websocket(self, chat_id):
         if chat_id in self.chat_ids and self.chat_ids[chat_id].connected:
