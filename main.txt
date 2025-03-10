@@ -1,9 +1,6 @@
 import logging
-import multiprocessing
-from database import CSDL
-from exchange import Exchange
+from ws_manager import QuanLyWebSocket  # Đổi từ websocket sang ws_manager
 from telegram_bot import BotTelegram
-from websocket import QuanLyWebSocket
 from model import MoHinhKetHop
 import threading
 import schedule
@@ -16,10 +13,7 @@ def thiet_lap_logging():
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('bot.log'),
-            logging.StreamHandler()
-        ]
+        handlers=[logging.FileHandler('bot.log'), logging.StreamHandler()]
     )
 
 def load_env(file_path=".env"):
@@ -30,7 +24,6 @@ def load_env(file_path=".env"):
                 key, value = line.split("=", 1)
                 os.environ[key] = value
 
-# Load file .env
 load_env(".env")
 
 def main():
