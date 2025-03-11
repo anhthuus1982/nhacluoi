@@ -25,6 +25,8 @@ class Indicators:
     def get_indicators(self, symbol, timeframe='1h'):
         ohlcv = self.fetch_ohlcv(symbol, timeframe)
         close = pd.Series([x[4] for x in ohlcv])
+        if len(close) < RSI_PERIOD:
+            raise Exception("Du lieu khong du de tinh RSI")
         rsi = talib.RSI(close, timeperiod=RSI_PERIOD)[-1]
         ma = talib.SMA(close, timeperiod=MA_PERIOD)[-1]
         return {'rsi': rsi, 'ma': ma}
