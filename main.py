@@ -132,11 +132,11 @@ class TradingBotGUI:
         threading.Thread(target=self._execute_trade, args=(price,), daemon=True).start()
 
     def _execute_trade(self, price):
-        sl_percent = float(self.sl_entry.get()) / 100
-        tp_percent = float(self.tp_entry.get()) / 100
-        decision = self.model.decide(SYMBOL, price, sl_percent, tp_percent)
-        if decision:
-            try:
+        try:
+            sl_percent = float(self.sl_entry.get()) / 100
+            tp_percent = float(self.tp_entry.get()) / 100
+            decision = self.model.decide(SYMBOL, price, sl_percent, tp_percent)
+            if decision:
                 order = self.exchange.create_order(SYMBOL, decision['side'], AMOUNT, 
                                                  decision['stop_loss'], decision['take_profit'])
                 if order:
@@ -147,9 +147,9 @@ class TradingBotGUI:
                     if len(self.trades_buffer) >= 10:
                         self.db.save_trades_batch(self.trades_buffer)
                         self.trades_buffer = []
-            except Exception as e:
-                logging.error(f"Loi thuc thi lenh: {e}")
-                self.log(f"Loi: {e}")
+        except Exception as e:
+            logging.error(f"Loi thuc thi lenh: {e}")
+            self.log(f"Loi: {e}")
 
     def update_chart(self):
         self.ax.clear()
