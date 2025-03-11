@@ -1,28 +1,48 @@
+import sqlite3
 import pandas as pd
-import numpy as np
-import logging
-from ta.trend import ADXIndicator, SMAIndicator
-from ta.momentum import RSIIndicator
 
-nhat_ky = logging.getLogger(__name__)
+class Database:
+    def __init__(self, db_name='trading_data.db'):
+        self.conn = sqlite3.connect(db_name)
+        self.cursor = self.conn.cursor()
+        self.create_tables()
 
-def lay_tin_hieu(du_lieu, trong_so):
-    df = pd.DataFrame(du_lieu)
-    df = df.astype({'high': float, 'low': float, 'close': float})
+    def create_tables(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                symbol TEXT,
+                side TEXT,
+                price REAL,
+                amount REAL
+            )
+        ''')
+        self.cursor.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON trades (timestamp)')
+        self.conn.commit()
 
-    rsi = RSIIndicator(close=df['close'], window=14).rsi().iloc[-1]
-    adx = ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=14)
-    sma_50 = SMAIndicator(close=df['close'], window=50).sma_indicator().iloc[-1]
-    sma_200 = SMAIndicator(close=df['close'], window=200).sma_indicator().iloc[-1]
+    def save_trade(self, timestamp, symbol, side, price, amount):
+        try:
+            self.cursor.execute('''
+                INSERT INTO trades (timestamp, symbol, side, price, amount)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (timestamp, symbol, side, price, amount))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"Loi database: {e}")
 
-    tin_hieu = {}
-    tin_hieu['rsi'] = 1 if rsi < 35 else -1 if rsi > 65 else 0
-    tin_hieu['adx'] = 1 if adx.adx().iloc[-1] > 25 and adx.adx_pos().iloc[-1] > adx.adx_neg().iloc[-1] else -1 if adx.adx().iloc[-1] > 25 else 0
-    tin_hieu['ma'] = 1 if sma_50 > sma_200 else -1 if sma_50 < sma_200 else 0
+    def save_trades_batch(self, trades):
+        try:
+            self.cursor.executemany('''
+                INSERT INTO trades (timestamp, symbol, side, price, amount)
+                VALUES (?, ?, ?, ?, ?)
+            ''', trades)
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"Loi batch save: {e}")
 
-    return tin_hieu, adx.adx().iloc[-1], rsi
+    def get_trades(self):
+        return pd.read_sql_query("SELECT * FROM trades", self.conn)
 
-def kiem_tra_volume_breakout(du_lieu):
-    df = pd.DataFrame(du_lieu)
-    sma_volume = df['volume'].rolling(window=20).mean()
-    return 1 if df['volume'].iloc[-1] > sma_volume.iloc[-1] * 2 and df['close'].iloc[-1] > df['close'].iloc[-2] else -1 if df['volume'].iloc[-1] > sma_volume.iloc[-1] * 2 else 0
+    def close(self):
+        self.conn.close()
