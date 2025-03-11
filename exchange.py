@@ -1,5 +1,6 @@
 import ccxt
 from config import SYMBOL, LEVERAGE, MIN_BALANCE, MAX_DRAWDOWN
+import time
 
 class Exchange:
     def __init__(self, api_key, secret):
@@ -63,3 +64,11 @@ class Exchange:
                 if attempt == max_retries - 1:
                     raise e
                 time.sleep(2 ** attempt)
+
+    def get_profit(self):
+        # Gia su tinh loi nhuan don gian
+        return self.get_balance() - self.initial_balance
+
+    def get_recent_trades(self):
+        # Gia su lay 5 giao dich gan day
+        return self.exchange.fetch_my_trades(symbol=SYMBOL, limit=5)
