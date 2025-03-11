@@ -1,47 +1,146 @@
-import logging
-from ws_manager import QuanLyWebSocket  # Đổi từ websocket sang ws_manager
-from telegram_bot import BotTelegram
-from model import MoHinhKetHop
-import threading
-import schedule
-import time
 import os
+import tkinter as tk
+from tkinter import scrolledtext, simpledialog
+from dotenv import load_dotenv
+import logging
+import threading
+import signal
+import time
+import queue
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from config import SYMBOL, AMOUNT
+from exchange import Exchange
+from indicators import Indicators
+from model import TradingModel
+from database import Database
+from telegram_bot import TelegramBot
+from ws_manager import WebSocketManager
+from backtest import Backtest
 
-nhat_ky = logging.getLogger(__name__)
+logging.basicConfig(filename='bot.log', level=logging.INFO)
 
-def thiet_lap_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.FileHandler('bot.log'), logging.StreamHandler()]
-    )
+class TradingBotGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Bang Dieu Khien Bot Giao Dich")
+        self.running = False
+        self.trades_buffer = []
+        self.price_history = []
 
-def load_env(file_path=".env"):
-    with open(file_path, "r") as file:
-        for line in file:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                key, value = line.split("=", 1)
-                os.environ[key] = value
+        # Khoi tao cac thanh phan
+        load_dotenv()
+        self.exchange = Exchange(os.getenv('API_KEY'), os.getenv('API_SECRET'))
+        self.indicators = Indicators(self.exchange)
+        self.model = TradingModel(self.indicators)
+        self.db = Database()
+        self.telegram = TelegramBot(os.getenv('TELEGRAM_TOKEN'), self.exchange)
+        self.ws_manager = WebSocketManager()
+        self.password = "123456"  # Mat khau mac dinh
 
-load_env(".env")
+        # GUI
+        self.start_button = tk.Button(root, text="Khoi dong Bot", command=self.start_bot, state='disabled')
+        self.start_button.pack(pady=5)
 
-def main():
-    thiet_lap_logging()
-    nhat_ky.info("Chuong trinh bat dau tren Bybit testnet...")
+        self.stop_button = tk.Button(root, text="Dung Bot", command=self.stop_bot, state='disabled')
+        self.stop_button.pack(pady=5)
 
-    csdl = CSDL()
-    san = Exchange(testnet=True)
-    quan_ly_ws = QuanLyWebSocket(san)
-    mo_hinh = MoHinhKetHop(csdl)
-    bot = BotTelegram(csdl, san, quan_ly_ws, mo_hinh)
+        self.status_label = tk.Label(root, text="Trang thai: Da dung")
+        self.status_label.pack(pady=5)
 
-    threading.Thread(target=bot.thiet_lap_lich_trinh, daemon=True).start()
-    threading.Thread(target=bot.khoi_dong_dashboard, daemon=True).start()
+        self.balance_label = tk.Label(root, text="So du: 0 USDT")
+        self.balance_label.pack(pady=5)
 
-    bot.cap_nhat.start_polling()
-    nhat_ky.info("Bot khoi dong thanh cong, dang cho tin nhan tu Telegram...")
-    bot.cap_nhat.idle()
+        self.drawdown_label = tk.Label(root, text="Drawdown: 0%")
+        self.drawdown_label.pack(pady=5)
 
-if __name__ == "__main__":
-    main()
+        tk.Label(root, text="Stop Loss (%):").pack()
+        self.sl_entry = tk.Entry(root)
+        self.sl_entry.insert(0, "2")
+        self.sl_entry.pack(pady=5)
+
+        tk.Label(root, text="Take Profit (%):").pack()
+        self.tp_entry = tk.Entry(root)
+        self.tp_entry.insert(0, "3")
+        self.tp_entry.pack(pady=5)
+
+        self.password_entry = tk.Entry(root, show="*")
+        self.password_entry.pack(pady=5)
+        self.auth_button = tk.Button(root, text="Xac thuc", command=self.authenticate)
+        self.auth_button.pack(pady=5)
+
+        self.trades_button = tk.Button(root, text="Xem Giao Dich", command=self.view_trades)
+        self.trades_button.pack(pady=5)
+
+        self.backtest_button = tk.Button(root, text="Backtest", command=self.run_backtest)
+        self.backtest_button.pack(pady=5)
+
+        self.log_text = scrolledtext.ScrolledText(root, width=50, height=10)
+        self.log_text.pack(pady=5)
+
+        # Bieu do gia
+        self.fig, self.ax = plt.subplots(figsize=(5, 3))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=root)
+        self.canvas.get_tk_widget().pack(pady=5)
+
+        # Hang doi log
+        self.log_queue = queue.Queue(maxsize=100)
+        self.root.after(100, self.process_log_queue)
+
+        # Khoi dong Telegram va bao cao dinh ky
+        threading.Thread(target=self.telegram.run, daemon=True).start()
+        threading.Thread(target=self.periodic_report, daemon=True).start()
+
+        # Xu ly dong cua so
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def log(self, message):
+        try:
+            self.log_queue.put_nowait(message)
+        except queue.Full:
+            pass
+
+    def process_log_queue(self):
+        while not self.log_queue.empty():
+            message = self.log_queue.get()
+            self.log_text.insert(tk.END, f"{time.ctime()}: {message}\n")
+            self.log_text.see(tk.END)
+        self.root.after(100, self.process_log_queue)
+
+    def authenticate(self):
+        if self.password_entry.get() == self.password:
+            otp = "123456"  # Thay bang logic gui OTP qua Telegram
+            self.telegram.send_message(f"Ma OTP cua ban: {otp}")
+            otp_input = simpledialog.askstring("OTP", "Nhap ma OTP:")
+            if otp_input == otp:
+                self.start_button.config(state='normal')
+                self.auth_button.config(state='disabled')
+                self.password_entry.config(state='disabled')
+                self.log("Xac thuc thanh cong")
+            else:
+                self.log("Ma OTP sai!")
+        else:
+            self.log("Mat khau sai!")
+
+    def handle_price(self, price):
+        if not self.running:
+            return
+        self.price_history.append(price)
+        if len(self.price_history) > 50:
+            self.price_history.pop(0)
+        self.update_chart()
+        threading.Thread(target=self._execute_trade, args=(price,), daemon=True).start()
+
+    def _execute_trade(self, price):
+        try:
+            sl_percent = float(self.sl_entry.get()) / 100
+            tp_percent = float(self.tp_entry.get()) / 100
+        except ValueError:
+            sl_percent, tp_percent = 0.02, 0.03
+        decision = self.model.decide(SYMBOL, price, sl_percent, tp_percent)
+        if decision:
+            try:
+                order = self.exchange.create_order(SYMBOL, decision['side'], AMOUNT, 
+                                                 decision['stop_loss'], decision['take_profit'])
+                if order:
+                    self.trades_buffer.append((time.ctime(), SYMBOL, decision['side'], price, AMOUNT))​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
