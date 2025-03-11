@@ -49,4 +49,4 @@ class Backtest:
                     })
                     position = None
 
-        return {'final_balance': balance, 'trades': pd.DataFrame(trades)}
+        return balance, trades
